@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, Response
 from datetime import datetime
+import os
 import math
 
 app = Flask(__name__)
@@ -7,17 +8,20 @@ app = Flask(__name__)
 # -----------------------------
 # In-memory state (simple demo)
 # -----------------------------
-# positions[user] = {"lat":..., "lng":..., "ts":...}
-positions = {}
+# POSITIONS[user] = {"lat":..., "lng":..., "ts":...}
+POSITIONS = {}
 
-# trails[user] = [ {"lat":..., "lng":..., "ts":...}, ... ]
-trails = {}
+# TRAILS[user] = [ {"lat":..., "lng":..., "ts":...}, ... ]
+TRAILS = {}
 
-# events = list of {"ts","user","event","info"...}
-events = []
+# EVENTS = list of {"ts","user","event",...}
+EVENTS = []
 
-# Keep last N trail points per user (avoid memory bloat)
 MAX_TRAIL_POINTS = 200
+MAX_EVENTS = 500
+
+# Use env var if you want, else default
+AUTH_TOKEN = os.environ.get("NAV_TOKEN", "OPS2026")
 
 
 def utc_ts():
@@ -29,7 +33,6 @@ def clamp_float(x, lo, hi):
 
 
 def haversine_m(lat1, lon1, lat2, lon2):
-    # Distance in meters
     R = 6371000.0
     p1 = math.radians(lat1)
     p2 = math.radians(lat2)
@@ -41,15 +44,22 @@ def haversine_m(lat1, lon1, lat2, lon2):
 
 
 def add_event(user, event, **info):
-    events.append({
+    EVENTS.append({
         "ts": utc_ts(),
         "user": user,
         "event": event,
         **info
     })
-    # Optional: keep only last 500 events
-    if len(events) > 500:
-        del events[:-500]
+    if len(EVENTS) > MAX_EVENTS:
+        del EVENTS[:-MAX_EVENTS]
+
+
+# -----------------------------
+# Health (Render needs this)
+# -----------------------------
+@app.get("/health")
+def health():
+    return Response("ok", mimetype="text/plain")
 
 
 # -----------------------------
@@ -58,8 +68,12 @@ def add_event(user, event, **info):
 @app.post("/ping")
 def ping():
     data = request.get_json(force=True, silent=True) or {}
-    if data.get("token") != "OPS2026":
-      return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    # Token check (simple protection)
+    token = (data.get("token") or "").strip()
+    if token != AUTH_TOKEN:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
     user = (data.get("user") or "unknown").strip()
     lat = data.get("lat", None)
     lng = data.get("lng", None)
@@ -73,28 +87,25 @@ def ping():
     except Exception:
         return jsonify({"ok": False, "error": "lat/lng must be numbers"}), 400
 
-    # Basic sanity bounds
     lat = clamp_float(lat, -90, 90)
     lng = clamp_float(lng, -180, 180)
 
     now = utc_ts()
+    prev = POSITIONS.get(user)
+    POSITIONS[user] = {"lat": lat, "lng": lng, "ts": now}
 
-    prev = positions.get(user)
-    positions[user] = {"lat": lat, "lng": lng, "ts": now}
+    if user not in TRAILS:
+        TRAILS[user] = []
 
-    # Trail append (ignore tiny jitter if you want)
-    if user not in trails:
-        trails[user] = []
-
-    # Optionally drop points that are basically identical (reduce noise)
+    # Ignore tiny jitter (<2m)
     if prev:
         d = haversine_m(prev["lat"], prev["lng"], lat, lng)
-        if d < 2:  # <2m jitter -> ignore
+        if d < 2:
             return jsonify({"ok": True, "user": user, "ignored": True})
 
-    trails[user].append({"lat": lat, "lng": lng, "ts": now})
-    if len(trails[user]) > MAX_TRAIL_POINTS:
-        trails[user] = trails[user][-MAX_TRAIL_POINTS:]
+    TRAILS[user].append({"lat": lat, "lng": lng, "ts": now})
+    if len(TRAILS[user]) > MAX_TRAIL_POINTS:
+        TRAILS[user] = TRAILS[user][-MAX_TRAIL_POINTS:]
 
     add_event(user, "ping", lat=lat, lng=lng)
 
@@ -106,27 +117,30 @@ def ping():
 # -----------------------------
 @app.get("/positions")
 def get_positions():
-    return jsonify(positions)
+    # IMPORTANT: return dict keyed by user (your JS expects this)
+    return jsonify(POSITIONS)
 
 
 @app.get("/trails")
 def get_trails():
-    return jsonify(trails)
+    return jsonify(TRAILS)
 
 
 @app.get("/events")
 def get_events():
-    # Return newest first for easy display
-    return jsonify(list(reversed(events)))
+    # newest first
+    return jsonify(list(reversed(EVENTS)))
 
-@app.get("/health")
-def health():
-    return "ok", 200
 
 # -----------------------------
 # UI: Map
 # -----------------------------
 @app.get("/")
+def root():
+    # Always show map
+    return map_view()
+
+
 @app.get("/map")
 def map_view():
     html = r"""
@@ -141,39 +155,23 @@ def map_view():
 
   <style>
     html, body { height: 100%; margin: 0; padding: 0; }
-    /* Use full viewport height reliably on mobile */
     body { height: 100vh; height: 100dvh; font-family: -apple-system, system-ui, Segoe UI, Roboto, Arial, sans-serif; }
 
-    .wrap {
-      display: flex;
-      flex-direction: row;
-      height: 100%;
-      width: 100%;
-    }
+    .wrap { display:flex; flex-direction:row; height:100%; width:100%; }
+    #map { flex:1 1 auto; min-width:0; }
+    .side { width:340px; max-width:40vw; padding:12px; border-left:1px solid #eee; overflow:auto; background:#fff; }
 
-    #map { flex: 1 1 auto; min-width: 0; }
-
-    .side {
-      width: 340px;
-      max-width: 40vw;
-      padding: 12px 12px;
-      border-left: 1px solid #eee;
-      overflow: auto;
-      background: #fff;
-    }
-
-    .title { font-size: 22px; font-weight: 700; margin: 0 0 6px; }
-    .sub { color: #666; margin: 0 0 10px; font-size: 14px; }
-    .card { border: 1px solid #eee; border-radius: 10px; padding: 10px; margin: 8px 0; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; }
+    .title { font-size:22px; font-weight:700; margin:0 0 6px; }
+    .sub { color:#666; margin:0 0 10px; font-size:14px; }
+    .card { border:1px solid #eee; border-radius:10px; padding:10px; margin:8px 0; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:12px; }
     .userline { display:flex; justify-content:space-between; gap:8px; }
-    .badge { font-size: 12px; padding: 3px 8px; border-radius: 999px; background: #f2f2f2; }
+    .badge { font-size:12px; padding:3px 8px; border-radius:999px; background:#f2f2f2; }
 
-    /* Mobile layout: map on top, events below */
     @media (max-width: 900px) {
-      .wrap { flex-direction: column; }
-      #map { height: 60vh; height: 60dvh; }
-      .side { width: 100%; max-width: none; border-left: none; border-top: 1px solid #eee; }
+      .wrap { flex-direction:column; }
+      #map { height:60vh; height:60dvh; }
+      .side { width:100%; max-width:none; border-left:none; border-top:1px solid #eee; }
     }
   </style>
 </head>
@@ -198,11 +196,9 @@ def map_view():
     attribution: '&copy; OpenStreetMap'
   }).addTo(map);
 
-  // Per-user markers and trails
-  const markers = {};   // user -> L.marker
-  const polylines = {}; // user -> L.polyline
+  const markers = {};
+  const polylines = {};
 
-  // Simple color palette for different users
   const colors = ["#d62728","#1f77b4","#2ca02c","#ff7f0e","#9467bd","#8c564b","#e377c2","#7f7f7f"];
   function colorForUser(user) {
     let h = 0;
@@ -252,23 +248,17 @@ def map_view():
       const trailData = await trailsRes.json();
       const eventsData = await eventsRes.json();
 
-      // Update markers + trails
-      const users = Object.keys(posData);
-      for (const user of users) {
+      for (const user of Object.keys(posData)) {
         ensureUserOnMap(user);
         const p = posData[user];
         markers[user].setLatLng([p.lat, p.lng]);
 
-        // Trail polyline
         const t = trailData[user] || [];
-        const latlngs = t.map(x => [x.lat, x.lng]);
-        polylines[user].setLatLngs(latlngs);
+        polylines[user].setLatLngs(t.map(x => [x.lat, x.lng]));
       }
 
-      // Panel
       renderUsersPanel(posData);
 
-      // Events list (top 30)
       const list = document.getElementById("eventlist");
       const top = (eventsData || []).slice(0, 30);
       list.innerHTML = top.map(e => `
@@ -279,9 +269,7 @@ def map_view():
         </div>
       `).join("");
 
-      // Fix Leaflet sizing issues on mobile after layout changes
       setTimeout(() => map.invalidateSize(), 100);
-
     } catch (err) {
       console.log("refresh error:", err);
     }
@@ -301,10 +289,7 @@ def map_view():
 # -----------------------------
 @app.get("/phone")
 def phone_sender():
-    # user name passed via /phone?user=alpha
     user = (request.args.get("user") or "phone").strip()
-
-    # Optional token (simple protection) - also passed via querystring
     token = (request.args.get("token") or "").strip()
 
     html = f"""
@@ -393,7 +378,8 @@ def phone_sender():
         const lng = pos.coords.longitude;
         const acc = pos.coords.accuracy;
 
-        const res = await send(lat, lng, acc);
+        await send(lat, lng, acc);
+
         document.getElementById("status").innerText =
           "Sending: " + lat.toFixed(6) + ", " + lng.toFixed(6) + " (±" + Math.round(acc) + "m)";
       }},
@@ -424,10 +410,8 @@ def phone_sender():
 
 
 # -----------------------------
-# Main
+# Local run (Render uses gunicorn)
 # -----------------------------
-import os
-
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", "10000"))
     app.run(host="0.0.0.0", port=port, debug=True)

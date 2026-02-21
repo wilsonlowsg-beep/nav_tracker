@@ -119,8 +119,8 @@ def get_events():
     # Return newest first for easy display
     return jsonify(list(reversed(events)))
 
-@app.get("/healthz")
-def healthz():
+@app.get("/health")
+def health():
     return "ok", 200
 
 # -----------------------------
@@ -426,6 +426,8 @@ def phone_sender():
 # -----------------------------
 # Main
 # -----------------------------
+import os
+
 if __name__ == "__main__":
-    # Use 0.0.0.0 so ngrok/local network can reach it
-    app.run(host="0.0.0.0", port=5000, debug=True, use_reloader=False)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)

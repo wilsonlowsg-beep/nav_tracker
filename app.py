@@ -119,6 +119,9 @@ def get_events():
     # Return newest first for easy display
     return jsonify(list(reversed(events)))
 
+@app.get("/healthz")
+def healthz():
+    return "ok", 200
 
 # -----------------------------
 # UI: Map

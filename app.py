@@ -366,7 +366,7 @@ def health():
 # =============================
 # UI: Map (mobile-friendly + Events button toggle)
 # =============================
-@app.get("/")
+
 @app.get("/map")
 def map_view():
     html = r"""

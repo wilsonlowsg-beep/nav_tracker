@@ -24,6 +24,10 @@
   <div id="map"></div>
   <div id="panel">
     <b>Events</b><br>
+
+  <input id="username" placeholder="Enter your name"
+         style="padding:6px; width:140px; margin-bottom:6px;" /><br>
+
     Auto-refresh every 3s<br>
     <div id="status">Loading…</div>
   </div>
@@ -57,6 +61,33 @@
         document.getElementById("status").innerText = "Refresh failed (check server)";
       }
     }
+
+// === Send my own GPS to backend ===
+navigator.geolocation.watchPosition(function(position) {
+
+  const lat = position.coords.latitude;
+  const lng = position.coords.longitude;
+  const acc = position.coords.accuracy;
+
+  const user =
+    document.getElementById("username")?.value || "anonymous";
+
+  fetch("/event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user: user,
+      event: "ping",
+      lat: lat,
+      lng: lng,
+      acc: acc
+    })
+  });
+
+}, function(error) {
+  console.log("Geolocation error:", error);
+});
+
 
     refresh();
     setInterval(refresh, 3000);

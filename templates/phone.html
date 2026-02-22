@@ -1,0 +1,106 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Phone GPS Sender</title>
+  <style>
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 20px; }
+    .btn { font-size: 22px; padding: 14px 18px; margin-right: 10px; border-radius: 14px; border: 1px solid #ddd; background: #fff; }
+    .muted { color:#666; margin-top: 12px; }
+    .big { font-size: 28px; margin-top: 18px; }
+  </style>
+</head>
+<body>
+  <h1>Phone GPS Sender</h1>
+
+  <div class="big"><b>User:</b> <span id="u"></span></div>
+  <div class="big"><b>Token:</b> <span id="t"></span></div>
+
+  <p>
+    <button class="btn" id="startBtn">Start Sending</button>
+    <button class="btn" id="stopBtn">Stop</button>
+  </p>
+
+  <div class="muted">
+    Keep this tab open. iOS may pause GPS if the screen locks or Safari goes background.
+  </div>
+
+  <div class="big" id="status">Idle.</div>
+
+<script>
+  const qs = new URLSearchParams(window.location.search);
+  const user  = qs.get("user")  || "anonymous";
+  const token = qs.get("token") || "{{ token_default }}";
+
+  document.getElementById("u").textContent = user;
+  document.getElementById("t").textContent = token;
+
+  let watchId = null;
+  let lastSentAt = 0;
+
+  async function sendPoint(lat, lng, acc) {
+    try {
+      const res = await fetch("/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user, token, event: "ping",
+          lat, lng, acc
+        })
+      });
+      const js = await res.json().catch(()=>({}));
+      if (!res.ok) throw new Error(js.error || ("HTTP " + res.status));
+      return true;
+    } catch (e) {
+      document.getElementById("status").textContent = "Send failed: " + e.message;
+      return false;
+    }
+  }
+
+  function start() {
+    if (!navigator.geolocation) {
+      document.getElementById("status").textContent = "Geolocation not supported.";
+      return;
+    }
+    if (watchId !== null) return;
+
+    document.getElementById("status").textContent = "Starting…";
+
+    watchId = navigator.geolocation.watchPosition(async (pos) => {
+      // throttle to ~1 send / 2s
+      const now = Date.now();
+      if (now - lastSentAt < 2000) return;
+      lastSentAt = now;
+
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      const acc = pos.coords.accuracy;
+
+      const ok = await sendPoint(lat, lng, acc);
+      if (ok) {
+        document.getElementById("status").textContent =
+          `Sending: ${lat.toFixed(6)}, ${lng.toFixed(6)} (±${Math.round(acc)}m)`;
+      }
+    }, (err) => {
+      document.getElementById("status").textContent = "GPS error: " + err.message;
+    }, {
+      enableHighAccuracy: true,
+      maximumAge: 1000,
+      timeout: 10000
+    });
+  }
+
+  function stop() {
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+      watchId = null;
+    }
+    document.getElementById("status").textContent = "Stopped.";
+  }
+
+  document.getElementById("startBtn").addEventListener("click", start);
+  document.getElementById("stopBtn").addEventListener("click", stop);
+</script>
+</body>
+</html>

@@ -1,3 +1,4 @@
+nique colours per user)
 <!doctype html>
 <html>
 <head>
@@ -5,254 +6,160 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Nav Tracker Map</title>
 
-  <!-- Leaflet (must be https) -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
     body { margin:0; font-family: system-ui, -apple-system, Arial, sans-serif; }
-    #map { height: 100vh; width: 100vw; }
-
-    /* small panel top-right */
+    #map { position: fixed; left:0; top:0; right:320px; bottom:0; }
     #panel {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      z-index: 9999;
-      width: 320px;
-      max-height: 70vh;
-      overflow: auto;
-      background: rgba(255,255,255,0.95);
-      border: 1px solid #ddd;
-      border-radius: 10px;
-      padding: 10px;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+      position: fixed; top:0; right:0; bottom:0; width:320px;
+      overflow:auto; background:#fff; border-left:1px solid #ddd; padding:12px;
     }
-    #panel h3 { margin: 4px 0 8px 0; }
-    .small { color:#555; font-size: 12px; margin-bottom: 8px; }
-    .row { display:flex; gap:8px; align-items:center; margin-bottom: 8px; }
-    input { flex:1; padding: 8px; font-size: 14px; }
-    button { padding: 8px 10px; font-size: 14px; }
-    .pill { font-size:12px; padding:2px 8px; border:1px solid #ccc; border-radius:999px; background:#fafafa; }
-
-    .evt { border-top: 1px solid #eee; padding: 8px 0; }
-    .evt b { display:block; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    .small { color:#666; font-size: 12px; }
+    .row { border-bottom:1px solid #eee; padding:10px 0; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; }
+    .dot {
+      display:inline-block; width:10px; height:10px; border-radius:50%;
+      margin-right:8px; vertical-align:middle;
+    }
+    .btn { padding:8px 10px; border:1px solid #ddd; border-radius:10px; background:#fff; }
   </style>
 </head>
-
 <body>
   <div id="map"></div>
 
   <div id="panel">
-    <h3>Nav Tracker</h3>
-    <div class="small">
-      Auto-refresh every 3s. Use filter to show one user only.
+    <h3>Events</h3>
+    <div class="small">Auto-refresh every 3s</div>
+
+    <div style="margin:10px 0;">
+      <button class="btn" id="recenterBtn">Recenter</button>
     </div>
 
-    <div class="row">
-      <input id="userFilter" placeholder="Filter user (optional)" />
-      <button id="applyBtn">Apply</button>
+    <div class="small">Show users active within (seconds):</div>
+    <input id="since" class="mono" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:10px;"
+           value="{{ default_since_sec }}" />
+
+    <div style="margin-top:12px;">
+      <div id="status" class="small"></div>
     </div>
 
-    <div class="row">
-      <a id="senderLink" class="pill" href="/sender" target="_blank">Open Sender</a>
-      <span id="status" class="pill">loading…</span>
-    </div>
-
-    <div id="events"></div>
+    <div id="list"></div>
   </div>
 
 <script>
-  // Read query: /map?user=Ben
-  const qs = new URLSearchParams(window.location.search);
-  const userFilterEl = document.getElementById("userFilter");
-  const applyBtn = document.getElementById("applyBtn");
-  const eventsEl = document.getElementById("events");
-  const statusEl = document.getElementById("status");
-  const senderLinkEl = document.getElementById("senderLink");
-
-  // Default from URL
-  userFilterEl.value = qs.get("user") || "";
-
-  function currentUser() {
-    return (userFilterEl.value || "").trim();
+  // Deterministic color per user
+  function hashToHue(str) {
+    let h = 0;
+    for (let i=0; i<str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+    return h % 360;
+  }
+  function colorForUser(u) {
+    const hue = hashToHue(u || "anonymous");
+    return `hsl(${hue}, 85%, 45%)`;
   }
 
-  function updateSenderLink() {
-    const u = currentUser();
-    const token = qs.get("token") || ""; // optional convenience
-    const url = new URL("/sender", window.location.origin);
-    if (u) url.searchParams.set("user", u);
-    if (token) url.searchParams.set("token", token);
-    senderLinkEl.href = url.toString();
+  function makeDotIcon(color) {
+    return L.divIcon({
+      className: "",
+      html: `<div style="
+        width:16px;height:16px;border-radius:50%;
+        background:${color};
+        border:2px solid white;
+        box-shadow:0 1px 6px rgba(0,0,0,.35);
+      "></div>`,
+      iconSize: [16,16],
+      iconAnchor: [8,8],
+    });
   }
-  updateSenderLink();
-
-  applyBtn.addEventListener("click", () => {
-    const u = currentUser();
-    const url = new URL(window.location.href);
-    if (u) url.searchParams.set("user", u);
-    else url.searchParams.delete("user");
-    window.location.href = url.toString();
-  });
 
   // Map init
-  const map = L.map('map').setView([1.3521, 103.8198], 12);
+  const map = L.map('map', { zoomControl: true });
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap'
   }).addTo(map);
 
-  // ---- User color helpers (deterministic) ----
-function hashCode(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
-  return h;
-}
-
-const PALETTE = [
-  "#d62728", "#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd",
-  "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"
-];
-
-function colorForUser(user) {
-  return PALETTE[hashCode(user) % PALETTE.length];
-}
-
-// Leaflet colored dot icon (no extra libraries)
-function coloredDotIcon(color) {
-  const svg = encodeURIComponent(`
-    <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28">
-      <circle cx="14" cy="14" r="10" fill="${color}" stroke="white" stroke-width="3"/>
-    </svg>
-  `);
-  return L.icon({
-    iconUrl: "data:image/svg+xml;charset=UTF-8," + svg,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    popupAnchor: [0, -14]
-  });
-}
+  map.setView([1.3521, 103.8198], 12); // SG default
 
   const markers = {}; // user -> marker
-
-  function setStatus(text) {
-    statusEl.textContent = text;
-  }
-
-  function markerLabel(p) {
-    const acc = (p.acc == null) ? "?" : Math.round(p.acc);
-    return `<b>${p.user}</b><div class="mono">${p.lat?.toFixed(5)}, ${p.lng?.toFixed(5)} (±${acc}m)</div><div class="mono">${p.ts || ""}</div>`;
-  }
+  let firstFit = true;
 
   async function fetchJSON(path) {
     const res = await fetch(path, { cache: "no-store" });
-    if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   }
 
-  async function refreshPositions() {
-    const u = currentUser();
-    const url = new URL("/positions", window.location.origin);
-    // only show users seen recently (10 min). adjust if you want.
-    url.searchParams.set("since_sec", "600");
-
-    const data = await fetchJSON(url.toString());
-
-    // If filter is set, only keep that user
-    const filtered = u ? data.filter(x => (x.user || "") === u) : data;
-
-    // Remove markers not in filtered set
-    const keep = new Set(filtered.map(x => x.user));
-    for (const name in markers) {
-      if (!keep.has(name)) {
-        map.removeLayer(markers[name]);
-        delete markers[name];
-      }
-    }
-
-    // Add/update markers
-    filtered.forEach(p => {
-      if (p.lat == null || p.lng == null) return;
-      const ll = [p.lat, p.lng];
-      
- // Add/update markers
-filtered.forEach(p => {
-
-  if (p.lat == null || p.lng == null) return;
-
-  const c = colorForUser(p.user);   // ← best practice: define once
-
-  if (!markers[p.user]) {           // ← CREATE if not exists
-
-    markers[p.user] = L.marker([p.lat, p.lng], {
-      icon: coloredDotIcon(c)
-    })
-    .addTo(map)
-    .bindPopup(markerLabel(p));
-
-  } else {                          // ← UPDATE if exists
-
-    markers[p.user]
-      .setLatLng([p.lat, p.lng])
-      .setIcon(coloredDotIcon(c))    // ensure correct color
-      .setPopupContent(markerLabel(p));
-
-  }
-
-});
-    });
-
-    if (u && filtered.length === 0) {
-      setStatus("no device");
-    } else {
-      setStatus(`ok (${filtered.length})`);
-    }
-  }
-
-  function renderEvents(items) {
-    eventsEl.innerHTML = "";
-    if (!items.length) {
-      eventsEl.innerHTML = "<div class='small'>No events yet.</div>";
-      return;
-    }
-    items.forEach(it => {
-      const acc = (it.acc == null) ? "?" : Math.round(it.acc);
-      const div = document.createElement("div");
-      div.className = "evt";
-      div.innerHTML = `
-        <b>${it.user} <span class="pill">${it.event}</span></b>
-        <div class="mono">${it.ts || ""}</div>
-        <div class="mono">lat ${Number(it.lat).toFixed(6)}, lng ${Number(it.lng).toFixed(6)} (±${acc}m)</div>
+  function renderList(items) {
+    const el = document.getElementById("list");
+    el.innerHTML = "";
+    items.forEach(p => {
+      const c = colorForUser(p.user);
+      const row = document.createElement("div");
+      row.className = "row";
+      row.innerHTML = `
+        <div><span class="dot" style="background:${c}"></span><b>${p.user}</b></div>
+        <div class="small">${p.ts || ""}</div>
+        <div class="mono">lat ${p.lat ?? ""}, lng ${p.lng ?? ""}</div>
       `;
-      eventsEl.appendChild(div);
+      el.appendChild(row);
     });
   }
 
-  async function refreshEvents() {
-    const u = currentUser();
-    const url = new URL("/events", window.location.origin);
-    url.searchParams.set("limit", "30");
-    if (u) url.searchParams.set("user", u);
-    const data = await fetchJSON(url.toString());
-    renderEvents(data);
-  }
+  function updateMarkers(items) {
+    const seen = new Set();
 
-  async function refreshAll() {
-    try {
-      updateSenderLink();
-      await refreshPositions();
-      await refreshEvents();
-    } catch (e) {
-      setStatus("error");
-      // keep panel useful
-      eventsEl.innerHTML = `<div class="small mono">Refresh failed: ${String(e)}</div>`;
+    items.forEach(p => {
+      if (p.lat == null || p.lng == null) return;
+      seen.add(p.user);
+
+      const c = colorForUser(p.user);
+      const icon = makeDotIcon(c);
+
+      if (!markers[p.user]) {
+        markers[p.user] = L.marker([p.lat, p.lng], { icon }).addTo(map);
+      } else {
+        markers[p.user].setLatLng([p.lat, p.lng]);
+        markers[p.user].setIcon(icon);
+      }
+
+      markers[p.user].bindPopup(`<b>${p.user}</b><br>${p.ts}<br>±${Math.round(p.acc || 0)}m`);
+    });
+
+    // Remove users not in latest feed (so old traces "disappear" based on since_sec)
+    Object.keys(markers).forEach(u => {
+      if (!seen.has(u)) {
+        map.removeLayer(markers[u]);
+        delete markers[u];
+      }
+    });
+
+    if (firstFit && items.length > 0) {
+      const latlngs = items.filter(p=>p.lat!=null && p.lng!=null).map(p => [p.lat, p.lng]);
+      if (latlngs.length) map.fitBounds(latlngs, { padding: [50,50] });
+      firstFit = false;
     }
   }
 
-  refreshAll();
-  setInterval(refreshAll, 3000);
+  async function refresh() {
+    const sinceSec = document.getElementById("since").value.trim() || "{{ default_since_sec }}";
+    try {
+      document.getElementById("status").textContent = "Refreshing…";
+      const items = await fetchJSON(`/positions?since_sec=${encodeURIComponent(sinceSec)}`);
+      renderList(items);
+      updateMarkers(items);
+      document.getElementById("status").textContent = `OK (${items.length} users)`;
+    } catch (e) {
+      document.getElementById("status").textContent = "Refresh failed: " + e.message;
+    }
+  }
+
+  document.getElementById("recenterBtn").addEventListener("click", () => { firstFit = true; refresh(); });
+
+  refresh();
+  setInterval(refresh, 3000);
 </script>
 </body>
 </html>

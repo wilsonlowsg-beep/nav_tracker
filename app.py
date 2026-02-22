@@ -86,10 +86,10 @@ def init_db():
         """)
         con.commit()
 
-@app.before_first_request
-def _startup():
-    init_db()
-
+        con.commit()
+        #Initialize DB immediately (Flask 3 compatible)
+        init_db()
+        
 def db_insert_ping(ts, user, lat, lng, acc):
     if not db_enabled():
         return

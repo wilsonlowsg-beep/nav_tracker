@@ -1,10 +1,11 @@
-from flask import Flask, request, jsonify, Response
+from Flask import Flask, request, jsonify, Response
 from datetime import datetime
 import math
 import os
 import sqlite3
 from pathlib import Path  
 
+print("Render PORT =", os.environ.get("PORT"), flush=True)
 
 app = Flask(__name__)
 

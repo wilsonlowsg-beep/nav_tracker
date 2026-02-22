@@ -3,8 +3,40 @@ from datetime import datetime
 import math
 import os
 import sqlite3
+from pathlib import Path  
+
 
 app = Flask(__name__)
+
+DB_PATH = os.environ.get("DB_PATH", "nav_tracker.sqlite")
+
+def get_conn():
+    # Ensure folder exists (important for /var/data on Render disk)
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    with get_conn() as con:
+        con.execute("""
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT NOT NULL,
+            user TEXT NOT NULL,
+            event TEXT NOT NULL,
+            lat REAL,
+            lng REAL,
+            acc REAL
+        )
+        """)
+        con.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)")
+        con.execute("CREATE INDEX IF NOT EXISTS idx_events_user ON events(user)")
+        con.commit()
+
+# ✅ IMPORTANT: create tables immediately at startup
+init_db()
+
 
 # =============================
 # Config
@@ -212,7 +244,7 @@ def api_trails():
         return jsonify(recent_trails.get(user, []))
     return jsonify(recent_trails)
 
-@app.get("/events")
+@app.get("/events", strict_slashes=False)
 def api_events():
     """
     /events?limit=200

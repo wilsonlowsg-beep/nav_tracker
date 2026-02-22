@@ -176,21 +176,32 @@ function coloredDotIcon(color) {
     filtered.forEach(p => {
       if (p.lat == null || p.lng == null) return;
       const ll = [p.lat, p.lng];
-      if (!markers[p.user]) {
+      
+ // Add/update markers
+filtered.forEach(p => {
 
-  const c = colorForUser(p.user);
+  if (p.lat == null || p.lng == null) return;
 
-  markers[p.user] = L.marker([p.lat, p.lng], {
+  const c = colorForUser(p.user);   // ← best practice: define once
+
+  if (!markers[p.user]) {           // ← CREATE if not exists
+
+    markers[p.user] = L.marker([p.lat, p.lng], {
       icon: coloredDotIcon(c)
     })
     .addTo(map)
     .bindPopup(markerLabel(p));
 
-} else {
+  } else {                          // ← UPDATE if exists
 
-  markers[p.user].setLatLng([p.lat, p.lng])
-    .setPopupContent(markerLabel(p));
-}
+    markers[p.user]
+      .setLatLng([p.lat, p.lng])
+      .setIcon(coloredDotIcon(c))    // ensure correct color
+      .setPopupContent(markerLabel(p));
+
+  }
+
+});
     });
 
     if (u && filtered.length === 0) {

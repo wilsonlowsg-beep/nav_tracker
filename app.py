@@ -17,6 +17,11 @@ def get_conn():
     conn.row_factory = sqlite3.Row
     return conn
 
+def ensure_column(con, table, col, coltype):
+    cols = [r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()]
+    if col not in cols:
+        con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
+
 def init_db():
     with get_conn() as con:
         con.execute("""
@@ -33,6 +38,12 @@ def init_db():
         con.execute("CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts)")
         con.execute("CREATE INDEX IF NOT EXISTS idx_events_user ON events(user)")
         con.commit()
+
+  # ---- auto add new columns safely ----
+        ensure_column(con, "events", "ua", "TEXT")
+        ensure_column(con, "events", "ip", "TEXT")
+        ensure_column(con, "events", "source", "TEXT")
+        con.commit()      
 
 # ✅ IMPORTANT: create tables immediately at startup
 init_db()
@@ -204,12 +215,12 @@ def ping():
 # =============================
 # API: data for map UI
 # =============================
-@app.get("/positions")
+@app.get("/positions", strict_slashes=False)
 def api_positions():
     # return dict keyed by user (your JS expects this)
     return jsonify(latest_pos)
 
-@app.get("/trails")
+@app.get("/trails", strict_slashes=False)
 def api_trails():
     """
     /trails?user=wilson&limit=1000
@@ -267,6 +278,81 @@ def api_events():
         return jsonify(out)
 
     return jsonify(list(reversed(recent_events))[:limit])
+
+from datetime import datetime, timezone
+
+def _ago(ts_str: str) -> str:
+    # ts_str like "2026-02-22T07:19:09.572993Z"
+    try:
+        dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        secs = int((now - dt).total_seconds())
+        if secs < 60:
+            return f"{secs}s ago"
+        if secs < 3600:
+            return f"{secs//60}m ago"
+        return f"{secs//3600}h ago"
+    except Exception:
+        return ts_str
+
+def _acc_label(acc: float) -> str:
+    # you can tune thresholds
+    if acc <= 10:
+        return "✅ GOOD"
+    if acc <= 30:
+        return "🟡 OK"
+    return "🔴 POOR"
+
+@app.get("/events_view")
+def events_view():
+    limit = int(request.args.get("limit", "30"))
+    with get_conn() as con:
+        rows = con.execute(
+            "SELECT ts, user, event, lat, lng, acc FROM events ORDER BY ts DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+
+    html_rows = []
+    for r in rows:
+        ts, user, event, lat, lng, acc = r
+        gmaps = f"https://maps.google.com/?q={lat},{lng}"
+        html_rows.append(f"""
+        <tr>
+          <td>{ts}<br><small>{_ago(ts)}</small></td>
+          <td>{user}</td>
+          <td>{event}</td>
+          <td>{lat:.6f}, {lng:.6f}<br><a href="{gmaps}" target="_blank">Open map</a></td>
+          <td>{acc:.1f} m<br>{_acc_label(acc)}</td>
+        </tr>
+        """)
+
+    return f"""
+    <html>
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <title>Events</title>
+      <style>
+        body {{ font-family: Arial, sans-serif; padding: 12px; }}
+        table {{ border-collapse: collapse; width: 100%; }}
+        th, td {{ border: 1px solid #ddd; padding: 8px; vertical-align: top; }}
+        th {{ background: #f2f2f2; }}
+        small {{ color: #666; }}
+      </style>
+    </head>
+    <body>
+      <h2>Events (latest {limit})</h2>
+      <p>
+        API: <a href="/events?limit={limit}">/events?limit={limit}</a>
+      </p>
+      <table>
+        <tr>
+          <th>Time</th><th>User</th><th>Event</th><th>Location</th><th>Accuracy</th>
+        </tr>
+        {''.join(html_rows) if html_rows else '<tr><td colspan="5">No events yet</td></tr>'}
+      </table>
+    </body>
+    </html>
+    """
 
 @app.get("/health")
 def health():

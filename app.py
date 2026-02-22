@@ -1,4 +1,6 @@
-from flask import Flask
+
+from flask import Flask, request, jsonify, Response
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -8,13 +10,11 @@ def home():
 
 @app.route("/health")
 def health():
-    return "ok"
+    return jsonify({"ok": true, "ts": datetime.utcnow().isoformat()}), 200
 
 
 
 
-# from flask import Flask, request, jsonify, Response
-# from datetime import datetime
 # import math
 # import os
 # import sqlite3

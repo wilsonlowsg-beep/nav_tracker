@@ -168,6 +168,19 @@ def map_view():
     .userline { display:flex; justify-content:space-between; gap:8px; }
     .badge { font-size:12px; padding:3px 8px; border-radius:999px; background:#f2f2f2; }
 
+    .toggle{
+  display:none;
+  position:fixed;
+  top:12px;
+  right:12px;
+  z-index:9999;
+  font-size:16px;
+  padding:10px 12px;
+  border-radius:12px;
+  border:1px solid #ddd;
+  background:#fff;
+}
+
    @media (max-width: 900px) {
   .wrap {
     flex-direction: column;
@@ -177,18 +190,40 @@ def map_view():
     height: 100vh;
     height: 100dvh;
   }
+  .toggle { display:block; }
 
   .side {
-    display: none;
+      display:none;
+      position:fixed;
+      top:0;
+      left:0;
+      right:0;
+      bottom:0;
+      z-index:9998;
+      width:auto;
+      max-width:none;
+      border:none;
+      overflow:auto;
+      background:#fff;
+      padding:12px;
   }
+
+  .side.show {
+      display:block;
+  }
+
 }
   </style>
 </head>
 
 <body>
   <div class="wrap">
-    <div id="map"></div>
-    <div class="side">
+  <button id="toggleEvents" class="toggle">Events</button>
+
+  <div id="map"></div>
+
+  <div class="side" id="sidePanel">
+
       <h1 class="title">Events</h1>
       <p class="sub">Auto-refresh every 3s</p>
       <div id="users"></div>
@@ -283,6 +318,15 @@ def map_view():
       console.log("refresh error:", err);
     }
   }
+
+  const btn = document.getElementById("toggleEvents");
+  const side = document.getElementById("sidePanel");
+
+  btn.addEventListener("click", () => {
+  side.classList.toggle("show");
+  btn.textContent = side.classList.contains("show") ? "Map" : "Events";
+  setTimeout(() => map.invalidateSize(), 150);
+});
 
   refresh();
   setInterval(refresh, 3000);

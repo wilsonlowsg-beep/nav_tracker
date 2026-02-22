@@ -168,11 +168,20 @@ def map_view():
     .userline { display:flex; justify-content:space-between; gap:8px; }
     .badge { font-size:12px; padding:3px 8px; border-radius:999px; background:#f2f2f2; }
 
-    @media (max-width: 900px) {
-      .wrap { flex-direction:column; }
-      #map { height:60vh; height:60dvh; }
-      .side { width:100%; max-width:none; border-left:none; border-top:1px solid #eee; }
-    }
+   @media (max-width: 900px) {
+  .wrap {
+    flex-direction: column;
+  }
+
+  #map {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  .side {
+    display: none;
+  }
+}
   </style>
 </head>
 

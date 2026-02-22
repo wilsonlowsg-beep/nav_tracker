@@ -89,7 +89,7 @@ def init_db():
         con.commit()
         #Initialize DB immediately (Flask 3 compatible)
         init_db()
-        
+
 def db_insert_ping(ts, user, lat, lng, acc):
     if not db_enabled():
         return
@@ -228,7 +228,7 @@ def api_events():
     if db_enabled():
         with db_conn() as con:
             rows = con.execute(
-                "SELECT ts,user,event,lat,lng,acc FROM events ORDER BY id DESC LIMIT ?",
+                "SELECT ts,user,event,lat,lng,acc FROM events ORDER BY ts DESC LIMIT ?",
                 (limit,)
             ).fetchall()
         out = [{"ts": r[0], "user": r[1], "event": r[2], "lat": r[3], "lng": r[4], "acc": r[5]} for r in rows]

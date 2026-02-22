@@ -8,6 +8,10 @@ from pathlib import Path
 
 app = Flask(__name__)
 
+@app.get("/")
+def root():
+    return "OK", 200
+
 DB_PATH = os.environ.get("DB_PATH", "nav_tracker.sqlite")
 
 def get_conn():

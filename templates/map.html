@@ -5,58 +5,39 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Nav Tracker Map</title>
 
-  <!-- Leaflet (MUST be https) -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet (must be https) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    html, body { height: 100%; margin: 0; }
-    #map { height: 100vh; width: 100vw; } /* critical for "blank map" issues */
+    body { margin:0; font-family: system-ui, -apple-system, Arial, sans-serif; }
+    #map { height: 100vh; width: 100vw; }
 
+    /* small panel top-right */
     #panel {
       position: absolute;
       top: 12px;
       right: 12px;
-      z-index: 1000;
+      z-index: 9999;
+      width: 320px;
+      max-height: 70vh;
+      overflow: auto;
       background: rgba(255,255,255,0.95);
-      padding: 10px;
+      border: 1px solid #ddd;
       border-radius: 10px;
-      width: 260px;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+      padding: 10px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.12);
     }
+    #panel h3 { margin: 4px 0 8px 0; }
+    .small { color:#555; font-size: 12px; margin-bottom: 8px; }
+    .row { display:flex; gap:8px; align-items:center; margin-bottom: 8px; }
+    input { flex:1; padding: 8px; font-size: 14px; }
+    button { padding: 8px 10px; font-size: 14px; }
+    .pill { font-size:12px; padding:2px 8px; border:1px solid #ccc; border-radius:999px; background:#fafafa; }
 
-    #panel h3 { margin: 0 0 8px 0; font-size: 14px; }
-    #row { display: flex; gap: 6px; align-items: center; }
-    #username {
-      flex: 1;
-      padding: 7px 8px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      font-size: 13px;
-    }
-    button {
-      padding: 7px 10px;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      background: #fff;
-      cursor: pointer;
-      font-size: 13px;
-    }
-    button:hover { background: #f6f6f6; }
-
-    .meta { font-size: 12px; margin-top: 8px; color: #222; }
-    .muted { color: #666; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .links { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
-    .links a { font-size: 12px; text-decoration: none; }
-    .pill {
-      padding: 4px 8px;
-      border: 1px solid #ddd;
-      border-radius: 999px;
-      background: #fff;
-      display: inline-block;
-    }
+    .evt { border-top: 1px solid #eee; padding: 8px 0; }
+    .evt b { display:block; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
   </style>
 </head>
 
@@ -65,188 +46,161 @@
 
   <div id="panel">
     <h3>Nav Tracker</h3>
-
-    <div id="row">
-      <input id="username" placeholder="Enter your name" />
-      <button id="setNameBtn" type="button">Set</button>
+    <div class="small">
+      Auto-refresh every 3s. Use filter to show one user only.
     </div>
 
-    <div class="meta">
-      <div>Current name: <span id="currentName" class="mono">...</span></div>
-      <div class="muted">Auto-refresh: every 3s</div>
-      <div id="status" class="meta muted">Starting…</div>
-      <div id="gps" class="meta muted"></div>
-      <div id="lastSent" class="meta muted"></div>
+    <div class="row">
+      <input id="userFilter" placeholder="Filter user (optional)" />
+      <button id="applyBtn">Apply</button>
     </div>
 
-    <div class="links">
-      <a class="pill" href="/events?limit=30" target="_blank" rel="noreferrer">Events (latest 30)</a>
-      <a class="pill" href="/map" target="_blank" rel="noreferrer">Open Map</a>
+    <div class="row">
+      <a id="senderLink" class="pill" href="/sender" target="_blank">Open Sender</a>
+      <span id="status" class="pill">loading…</span>
     </div>
+
+    <div id="events"></div>
   </div>
 
-  <script>
-    // ========== Helpers ==========
-    function qs(name) {
-      const v = new URLSearchParams(window.location.search).get(name);
-      return v ? v.trim() : "";
+<script>
+  // Read query: /map?user=Ben
+  const qs = new URLSearchParams(window.location.search);
+  const userFilterEl = document.getElementById("userFilter");
+  const applyBtn = document.getElementById("applyBtn");
+  const eventsEl = document.getElementById("events");
+  const statusEl = document.getElementById("status");
+  const senderLinkEl = document.getElementById("senderLink");
+
+  // Default from URL
+  userFilterEl.value = qs.get("user") || "";
+
+  function currentUser() {
+    return (userFilterEl.value || "").trim();
+  }
+
+  function updateSenderLink() {
+    const u = currentUser();
+    const token = qs.get("token") || ""; // optional convenience
+    const url = new URL("/sender", window.location.origin);
+    if (u) url.searchParams.set("user", u);
+    if (token) url.searchParams.set("token", token);
+    senderLinkEl.href = url.toString();
+  }
+  updateSenderLink();
+
+  applyBtn.addEventListener("click", () => {
+    const u = currentUser();
+    const url = new URL(window.location.href);
+    if (u) url.searchParams.set("user", u);
+    else url.searchParams.delete("user");
+    window.location.href = url.toString();
+  });
+
+  // Map init
+  const map = L.map('map').setView([1.3521, 103.8198], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
+
+  const markers = {}; // user -> marker
+
+  function setStatus(text) {
+    statusEl.textContent = text;
+  }
+
+  function markerLabel(p) {
+    const acc = (p.acc == null) ? "?" : Math.round(p.acc);
+    return `<b>${p.user}</b><div class="mono">${p.lat?.toFixed(5)}, ${p.lng?.toFixed(5)} (±${acc}m)</div><div class="mono">${p.ts || ""}</div>`;
+  }
+
+  async function fetchJSON(path) {
+    const res = await fetch(path, { cache: "no-store" });
+    if (!res.ok) throw new Error(`${path} -> ${res.status}`);
+    return await res.json();
+  }
+
+  async function refreshPositions() {
+    const u = currentUser();
+    const url = new URL("/positions", window.location.origin);
+    // only show users seen recently (10 min). adjust if you want.
+    url.searchParams.set("since_sec", "600");
+
+    const data = await fetchJSON(url.toString());
+
+    // If filter is set, only keep that user
+    const filtered = u ? data.filter(x => (x.user || "") === u) : data;
+
+    // Remove markers not in filtered set
+    const keep = new Set(filtered.map(x => x.user));
+    for (const name in markers) {
+      if (!keep.has(name)) {
+        map.removeLayer(markers[name]);
+        delete markers[name];
+      }
     }
 
-    function safeName(raw) {
-      // keep it simple; avoid empty, crazy long names
-      const cleaned = (raw || "").trim().slice(0, 24);
-      return cleaned.replace(/[^\w\s\-\.]/g, ""); // letters/numbers/_ space - .
-    }
-
-    function randomTesterName() {
-      const n = Math.floor(1000 + Math.random() * 9000);
-      return `tester-${n}`;
-    }
-
-    function nowStr() {
-      const d = new Date();
-      return d.toLocaleString();
-    }
-
-    // ========== Name logic ==========
-    // Priority: URL ?user= -> localStorage -> auto-generated
-    const LS_KEY = "nav_tracker_user";
-
-    let userFromUrl = safeName(qs("user"));
-    let userFromLS = safeName(localStorage.getItem(LS_KEY));
-    let currentUser = userFromUrl || userFromLS || randomTesterName();
-
-    // Put into UI + persist
-    const usernameInput = document.getElementById("username");
-    const currentNameEl = document.getElementById("currentName");
-    const statusEl = document.getElementById("status");
-    const gpsEl = document.getElementById("gps");
-    const lastSentEl = document.getElementById("lastSent");
-
-    function applyUser(newName) {
-      const name = safeName(newName);
-      if (!name) return;
-      currentUser = name;
-      localStorage.setItem(LS_KEY, currentUser);
-      usernameInput.value = currentUser;
-      currentNameEl.textContent = currentUser;
-    }
-
-    applyUser(currentUser);
-
-    document.getElementById("setNameBtn").addEventListener("click", () => {
-      applyUser(usernameInput.value);
-      statusEl.textContent = `Name saved as "${currentUser}"`;
+    // Add/update markers
+    filtered.forEach(p => {
+      if (p.lat == null || p.lng == null) return;
+      const ll = [p.lat, p.lng];
+      if (!markers[p.user]) {
+        markers[p.user] = L.marker(ll).addTo(map).bindPopup(markerLabel(p));
+      } else {
+        markers[p.user].setLatLng(ll).setPopupContent(markerLabel(p));
+      }
     });
 
-    // If user came via ?user=, save it so they don't need to type next time
-    if (userFromUrl) {
-      localStorage.setItem(LS_KEY, currentUser);
+    if (u && filtered.length === 0) {
+      setStatus("no device");
+    } else {
+      setStatus(`ok (${filtered.length})`);
     }
+  }
 
-    // ========== Leaflet Map ==========
-    const map = L.map("map").setView([1.3521, 103.8198], 11); // SG
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "&copy; OpenStreetMap"
-    }).addTo(map);
-
-    // user -> marker
-    const markers = {};
-
-    async function refreshMarkers() {
-      try {
-        const res = await fetch("/positions", { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-
-        if (!Array.isArray(data)) throw new Error("positions is not an array");
-
-        // Status line
-        if (data.length === 0) {
-          statusEl.textContent = "No devices yet.";
-        } else {
-          const names = data.map(d => d.user).filter(Boolean);
-          statusEl.textContent = `Tracking (${data.length}): ${names.join(", ")}`;
-        }
-
-        for (const p of data) {
-          if (!p || typeof p.lat !== "number" || typeof p.lon !== "number") continue;
-
-          const name = (p.user || "unknown").toString();
-          const latlng = [p.lat, p.lon];
-
-          if (!markers[name]) {
-            markers[name] = L.marker(latlng).addTo(map).bindPopup(name);
-          } else {
-            markers[name].setLatLng(latlng);
-          }
-        }
-      } catch (e) {
-        statusEl.textContent = "Refresh failed (check server).";
-      }
+  function renderEvents(items) {
+    eventsEl.innerHTML = "";
+    if (!items.length) {
+      eventsEl.innerHTML = "<div class='small'>No events yet.</div>";
+      return;
     }
+    items.forEach(it => {
+      const acc = (it.acc == null) ? "?" : Math.round(it.acc);
+      const div = document.createElement("div");
+      div.className = "evt";
+      div.innerHTML = `
+        <b>${it.user} <span class="pill">${it.event}</span></b>
+        <div class="mono">${it.ts || ""}</div>
+        <div class="mono">lat ${Number(it.lat).toFixed(6)}, lng ${Number(it.lng).toFixed(6)} (±${acc}m)</div>
+      `;
+      eventsEl.appendChild(div);
+    });
+  }
 
-    // ========== GPS -> backend ==========
-    // Throttle sending so we don't spam the server every tiny movement
-    let lastSendMs = 0;
-    const MIN_SEND_INTERVAL_MS = 2500;
+  async function refreshEvents() {
+    const u = currentUser();
+    const url = new URL("/events", window.location.origin);
+    url.searchParams.set("limit", "30");
+    if (u) url.searchParams.set("user", u);
+    const data = await fetchJSON(url.toString());
+    renderEvents(data);
+  }
 
-    async function sendPing(lat, lng, acc) {
-      const now = Date.now();
-      if (now - lastSendMs < MIN_SEND_INTERVAL_MS) return;
-      lastSendMs = now;
-
-      try {
-        await fetch("/event", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            user: currentUser,
-            event: "ping",
-            lat: lat,
-            lng: lng,
-            acc: acc
-          })
-        });
-        lastSentEl.textContent = `Last sent: ${nowStr()}`;
-      } catch (e) {
-        lastSentEl.textContent = `Last sent: failed (${nowStr()})`;
-      }
+  async function refreshAll() {
+    try {
+      updateSenderLink();
+      await refreshPositions();
+      await refreshEvents();
+    } catch (e) {
+      setStatus("error");
+      // keep panel useful
+      eventsEl.innerHTML = `<div class="small mono">Refresh failed: ${String(e)}</div>`;
     }
+  }
 
-    function startGeolocation() {
-      if (!("geolocation" in navigator)) {
-        gpsEl.textContent = "GPS: not supported on this device/browser.";
-        return;
-      }
-
-      gpsEl.textContent = "GPS: requesting permission…";
-
-      navigator.geolocation.watchPosition(
-        (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          const acc = position.coords.accuracy;
-
-          gpsEl.textContent = `GPS: ok (±${Math.round(acc)}m)`;
-          sendPing(lat, lng, acc);
-        },
-        (error) => {
-          gpsEl.textContent = `GPS error: ${error.message || error.code}`;
-        },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 2000,
-          timeout: 15000
-        }
-      );
-    }
-
-    // ========== Kickoff ==========
-    refreshMarkers();
-    setInterval(refreshMarkers, 3000);
-    startGeolocation();
-  </script>
+  refreshAll();
+  setInterval(refreshAll, 3000);
+</script>
 </body>
 </html>

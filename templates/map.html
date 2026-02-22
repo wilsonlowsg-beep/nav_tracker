@@ -1,165 +1,241 @@
-nique colours per user)
+<!-- templates/map.html -->
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Nav Tracker Map</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Nav Tracker</title>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
-  <style>
-    body { margin:0; font-family: system-ui, -apple-system, Arial, sans-serif; }
-    #map { position: fixed; left:0; top:0; right:320px; bottom:0; }
-    #panel {
-      position: fixed; top:0; right:0; bottom:0; width:320px;
-      overflow:auto; background:#fff; border-left:1px solid #ddd; padding:12px;
-    }
-    .small { color:#666; font-size: 12px; }
-    .row { border-bottom:1px solid #eee; padding:10px 0; }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; }
-    .dot {
-      display:inline-block; width:10px; height:10px; border-radius:50%;
-      margin-right:8px; vertical-align:middle;
-    }
-    .btn { padding:8px 10px; border:1px solid #ddd; border-radius:10px; background:#fff; }
-  </style>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+html, body { height:100%; margin:0; font-family: system-ui, -apple-system, Arial; }
+#map { height:100%; width:100%; }
+
+/* Panel */
+#panel {
+  position:absolute;
+  top:12px;
+  right:12px;
+  width:340px;
+  max-height:calc(100% - 24px);
+  overflow:auto;
+  background:rgba(255,255,255,0.96);
+  border-radius:14px;
+  padding:14px;
+  box-shadow:0 12px 30px rgba(0,0,0,.15);
+  z-index:999;
+  transition:all .25s ease;
+}
+
+#panel h3 { margin:0 0 6px 0; }
+.small { font-size:12px; color:#555; }
+
+.dot {
+  width:10px;height:10px;border-radius:50%;
+  border:2px solid #fff;
+  box-shadow:0 0 6px rgba(0,0,0,.3);
+}
+
+.event {
+  border-top:1px solid rgba(0,0,0,.08);
+  padding:10px 0;
+}
+
+button {
+  border:1px solid rgba(0,0,0,.2);
+  background:#fff;
+  border-radius:999px;
+  padding:6px 12px;
+  cursor:pointer;
+}
+
+/* MOBILE */
+@media (max-width:768px) {
+  #panel {
+    left:12px;
+    right:12px;
+    top:auto;
+    bottom:12px;
+    width:auto;
+    max-height:50vh;
+  }
+
+  #panel.collapsed {
+    max-height:60px;
+    overflow:hidden;
+  }
+}
+</style>
 </head>
+
 <body>
-  <div id="map"></div>
+<div id="map"></div>
 
-  <div id="panel">
+<div id="panel">
+  <div style="display:flex;justify-content:space-between;align-items:center;">
     <h3>Events</h3>
-    <div class="small">Auto-refresh every 3s</div>
-
-    <div style="margin:10px 0;">
-      <button class="btn" id="recenterBtn">Recenter</button>
-    </div>
-
-    <div class="small">Show users active within (seconds):</div>
-    <input id="since" class="mono" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:10px;"
-           value="{{ default_since_sec }}" />
-
-    <div style="margin-top:12px;">
-      <div id="status" class="small"></div>
-    </div>
-
-    <div id="list"></div>
+    <button id="togglePanel">Hide</button>
   </div>
 
+  <div class="small">Auto-refresh every 3s</div>
+  <div id="status" class="small" style="margin-top:6px;">Loading…</div>
+
+  <div id="events"></div>
+</div>
+
 <script>
-  // Deterministic color per user
-  function hashToHue(str) {
-    let h = 0;
-    for (let i=0; i<str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
-    return h % 360;
+// =====================
+// Unique colours
+// =====================
+const PALETTE = [
+  "#e6194B","#3cb44b","#4363d8","#f58231","#911eb4",
+  "#46f0f0","#f032e6","#bcf60c","#fabebe","#008080",
+  "#e6beff","#9A6324","#fffac8","#800000","#aaffc3",
+  "#808000","#ffd8b1","#000075","#808080","#ff7f50"
+];
+
+function hashUser(u){
+  let h=0;
+  for(let i=0;i<u.length;i++){
+    h=((h<<5)-h)+u.charCodeAt(i);
+    h|=0;
   }
-  function colorForUser(u) {
-    const hue = hashToHue(u || "anonymous");
-    return `hsl(${hue}, 85%, 45%)`;
+  return Math.abs(h);
+}
+
+function colorForUser(u){
+  return PALETTE[ hashUser(u||"") % PALETTE.length ];
+}
+
+function colorDotIcon(color){
+  return L.divIcon({
+    className:"",
+    html:`<div style="
+      width:14px;height:14px;border-radius:50%;
+      background:${color};
+      border:2px solid white;
+      box-shadow:0 0 6px rgba(0,0,0,.35);
+    "></div>`,
+    iconSize:[14,14],
+    iconAnchor:[7,7]
+  });
+}
+
+// =====================
+// Map
+// =====================
+const map = L.map('map').setView([1.3521,103.8198],12);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  maxZoom:19,
+  attribution:'© OpenStreetMap'
+}).addTo(map);
+
+const markers = {};
+
+// =====================
+// Fetch + Refresh
+// =====================
+async function fetchJSON(url){
+  const r = await fetch(url,{cache:"no-store"});
+  if(!r.ok) throw new Error(r.status);
+  return await r.json();
+}
+
+function setStatus(msg, ok=true){
+  const el=document.getElementById("status");
+  el.textContent=msg;
+  el.style.color= ok ? "#006400" : "#b00020";
+}
+
+function renderEvents(items){
+  const box=document.getElementById("events");
+  box.innerHTML="";
+
+  if(!items.length){
+    box.innerHTML="<div class='event'>No events yet.</div>";
+    return;
   }
 
-  function makeDotIcon(color) {
-    return L.divIcon({
-      className: "",
-      html: `<div style="
-        width:16px;height:16px;border-radius:50%;
-        background:${color};
-        border:2px solid white;
-        box-shadow:0 1px 6px rgba(0,0,0,.35);
-      "></div>`,
-      iconSize: [16,16],
-      iconAnchor: [8,8],
-    });
-  }
+  items.forEach(e=>{
+    const c=colorForUser(e.user);
+    const div=document.createElement("div");
+    div.className="event";
+    div.innerHTML=`
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="dot" style="background:${c}"></div>
+        <b>${e.user}</b>
+      </div>
+      <div class="small" style="margin-top:4px;">
+        ${e.ts}<br/>
+        lat ${Number(e.lat).toFixed(6)}, lng ${Number(e.lng).toFixed(6)}
+      </div>
+    `;
+    box.appendChild(div);
+  });
+}
 
-  // Map init
-  const map = L.map('map', { zoomControl: true });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap'
-  }).addTo(map);
+async function refresh(){
+  try{
+    const positions = await fetchJSON("/positions?since_sec=3600");
 
-  map.setView([1.3521, 103.8198], 12); // SG default
+    // Update markers
+    const seen=new Set();
 
-  const markers = {}; // user -> marker
-  let firstFit = true;
-
-  async function fetchJSON(path) {
-    const res = await fetch(path, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  }
-
-  function renderList(items) {
-    const el = document.getElementById("list");
-    el.innerHTML = "";
-    items.forEach(p => {
-      const c = colorForUser(p.user);
-      const row = document.createElement("div");
-      row.className = "row";
-      row.innerHTML = `
-        <div><span class="dot" style="background:${c}"></span><b>${p.user}</b></div>
-        <div class="small">${p.ts || ""}</div>
-        <div class="mono">lat ${p.lat ?? ""}, lng ${p.lng ?? ""}</div>
-      `;
-      el.appendChild(row);
-    });
-  }
-
-  function updateMarkers(items) {
-    const seen = new Set();
-
-    items.forEach(p => {
-      if (p.lat == null || p.lng == null) return;
+    positions.forEach(p=>{
+      if(p.lat==null||p.lng==null) return;
       seen.add(p.user);
+      const c=colorForUser(p.user);
 
-      const c = colorForUser(p.user);
-      const icon = makeDotIcon(c);
-
-      if (!markers[p.user]) {
-        markers[p.user] = L.marker([p.lat, p.lng], { icon }).addTo(map);
+      if(!markers[p.user]){
+        markers[p.user]=L.marker([p.lat,p.lng],{
+          icon:colorDotIcon(c)
+        }).addTo(map)
+        .bindPopup(`<b>${p.user}</b><br/>${p.ts}`);
       } else {
-        markers[p.user].setLatLng([p.lat, p.lng]);
-        markers[p.user].setIcon(icon);
+        markers[p.user].setLatLng([p.lat,p.lng]);
+        markers[p.user].setIcon(colorDotIcon(c));
       }
-
-      markers[p.user].bindPopup(`<b>${p.user}</b><br>${p.ts}<br>±${Math.round(p.acc || 0)}m`);
     });
 
-    // Remove users not in latest feed (so old traces "disappear" based on since_sec)
-    Object.keys(markers).forEach(u => {
-      if (!seen.has(u)) {
+    // remove old markers
+    Object.keys(markers).forEach(u=>{
+      if(!seen.has(u)){
         map.removeLayer(markers[u]);
         delete markers[u];
       }
     });
 
-    if (firstFit && items.length > 0) {
-      const latlngs = items.filter(p=>p.lat!=null && p.lng!=null).map(p => [p.lat, p.lng]);
-      if (latlngs.length) map.fitBounds(latlngs, { padding: [50,50] });
-      firstFit = false;
-    }
+    const events = await fetchJSON("/events?limit=20");
+    renderEvents(events);
+
+    setStatus(`OK (${positions.length} users)`);
+
+  } catch(e){
+    setStatus("Refresh failed",false);
   }
+}
 
-  async function refresh() {
-    const sinceSec = document.getElementById("since").value.trim() || "{{ default_since_sec }}";
-    try {
-      document.getElementById("status").textContent = "Refreshing…";
-      const items = await fetchJSON(`/positions?since_sec=${encodeURIComponent(sinceSec)}`);
-      renderList(items);
-      updateMarkers(items);
-      document.getElementById("status").textContent = `OK (${items.length} users)`;
-    } catch (e) {
-      document.getElementById("status").textContent = "Refresh failed: " + e.message;
-    }
-  }
+refresh();
+setInterval(refresh,3000);
 
-  document.getElementById("recenterBtn").addEventListener("click", () => { firstFit = true; refresh(); });
+// =====================
+// Collapsible panel
+// =====================
+const toggleBtn=document.getElementById("togglePanel");
+const panel=document.getElementById("panel");
 
-  refresh();
-  setInterval(refresh, 3000);
+toggleBtn.addEventListener("click",()=>{
+  panel.classList.toggle("collapsed");
+  toggleBtn.textContent = panel.classList.contains("collapsed")
+    ? "Show"
+    : "Hide";
+});
 </script>
+
 </body>
 </html>

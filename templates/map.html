@@ -1,241 +1,343 @@
 <!-- templates/map.html -->
 <!doctype html>
-<html lang="en">
+<html>
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Nav Tracker</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, initial-scale=1, user-scalable=no" />
+  <title>Nav Tracker Map</title>
 
-<link rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    html, body { height: 100%; margin: 0; font-family: -apple-system, system-ui, Arial, sans-serif; }
+    #map { height: 100%; width: 100%; }
 
-<style>
-html, body { height:100%; margin:0; font-family: system-ui, -apple-system, Arial; }
-#map { height:100%; width:100%; }
+    /* Bottom sheet */
+    #panel {
+      position: absolute;
+      left: 12px; right: 12px; bottom: 12px;
+      background: rgba(255,255,255,0.95);
+      border: 1px solid #e6e6e6;
+      border-radius: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+      padding: 12px;
+      max-height: 55vh;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+    }
 
-/* Panel */
-#panel {
-  position:absolute;
-  top:12px;
-  right:12px;
-  width:340px;
-  max-height:calc(100% - 24px);
-  overflow:auto;
-  background:rgba(255,255,255,0.96);
-  border-radius:14px;
-  padding:14px;
-  box-shadow:0 12px 30px rgba(0,0,0,.15);
-  z-index:999;
-  transition:all .25s ease;
-}
+    #panelHeader {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
 
-#panel h3 { margin:0 0 6px 0; }
-.small { font-size:12px; color:#555; }
+    #panel h2 { margin: 0; font-size: 34px; letter-spacing: -0.5px; }
+    .small { color: #666; font-size: 14px; margin-top: 2px; }
 
-.dot {
-  width:10px;height:10px;border-radius:50%;
-  border:2px solid #fff;
-  box-shadow:0 0 6px rgba(0,0,0,.3);
-}
+    .btn {
+      border: 1px solid #d8d8d8;
+      background: #fff;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-size: 16px;
+    }
+    .btn:active { transform: scale(0.98); }
 
-.event {
-  border-top:1px solid rgba(0,0,0,.08);
-  padding:10px 0;
-}
+    #statusLine { margin: 6px 0 10px 0; font-size: 16px; }
+    #statusLine.ok { color: #2a7a2a; }
+    #statusLine.bad { color: #b00020; }
 
-button {
-  border:1px solid rgba(0,0,0,.2);
-  background:#fff;
-  border-radius:999px;
-  padding:6px 12px;
-  cursor:pointer;
-}
+    .event {
+      padding: 12px 8px;
+      border-top: 1px solid #eee;
+      cursor: pointer;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .event:active { background: #f3f3f3; }
 
-/* MOBILE */
-@media (max-width:768px) {
-  #panel {
-    left:12px;
-    right:12px;
-    top:auto;
-    bottom:12px;
-    width:auto;
-    max-height:50vh;
-  }
+    .rowTop {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .dot {
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      border: 2px solid rgba(255,255,255,0.9);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .name { font-weight: 800; font-size: 30px; line-height: 1.05; }
+    .meta { color: #333; font-size: 18px; margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .muted { color: #666; }
 
-  #panel.collapsed {
-    max-height:60px;
-    overflow:hidden;
-  }
-}
-</style>
+    .pillRow {
+      display: flex;
+      gap: 10px;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+
+    .input {
+      width: 140px;
+      font-size: 16px;
+      padding: 8px 10px;
+      border: 1px solid #d8d8d8;
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    /* marker "dot" icon */
+    .pin {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 3px solid #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+  </style>
 </head>
 
 <body>
-<div id="map"></div>
+  <div id="map"></div>
 
-<div id="panel">
-  <div style="display:flex;justify-content:space-between;align-items:center;">
-    <h3>Events</h3>
-    <button id="togglePanel">Hide</button>
+  <div id="panel">
+    <div id="panelHeader">
+      <div>
+        <h2>Events</h2>
+        <div class="small">Auto-refresh every 3s</div>
+      </div>
+      <button id="toggleBtn" class="btn">Hide</button>
+    </div>
+
+    <div class="pillRow">
+      <button id="recenterBtn" class="btn">Recenter</button>
+      <div class="small muted" style="align-self:center;">Show users active within (seconds):</div>
+      <input id="sinceSec" class="input" type="number" value="3600" min="5" max="86400" />
+    </div>
+
+    <div id="statusLine" class="ok">OK</div>
+    <div id="events"></div>
   </div>
 
-  <div class="small">Auto-refresh every 3s</div>
-  <div id="status" class="small" style="margin-top:6px;">Loading…</div>
+  <script>
+    // ---------------------------
+    // Helpers
+    // ---------------------------
+    const qs = new URLSearchParams(window.location.search);
+    const userFilter = (qs.get("user") || "").trim(); // optional
+    const panel = document.getElementById("panel");
+    const toggleBtn = document.getElementById("toggleBtn");
+    const recenterBtn = document.getElementById("recenterBtn");
+    const sinceSecInput = document.getElementById("sinceSec");
+    const statusLine = document.getElementById("statusLine");
+    const eventsEl = document.getElementById("events");
 
-  <div id="events"></div>
-</div>
+    function hashToHue(str) {
+      let h = 0;
+      for (let i = 0; i < str.length; i++) {
+        h = (h * 31 + str.charCodeAt(i)) >>> 0;
+      }
+      return h % 360;
+    }
 
-<script>
-// =====================
-// Unique colours
-// =====================
-const PALETTE = [
-  "#e6194B","#3cb44b","#4363d8","#f58231","#911eb4",
-  "#46f0f0","#f032e6","#bcf60c","#fabebe","#008080",
-  "#e6beff","#9A6324","#fffac8","#800000","#aaffc3",
-  "#808000","#ffd8b1","#000075","#808080","#ff7f50"
-];
+    function colorForUser(name) {
+      const hue = hashToHue(name.toLowerCase());
+      return `hsl(${hue} 85% 45%)`;
+    }
 
-function hashUser(u){
-  let h=0;
-  for(let i=0;i<u.length;i++){
-    h=((h<<5)-h)+u.charCodeAt(i);
-    h|=0;
-  }
-  return Math.abs(h);
-}
+    function markerIcon(color) {
+      return L.divIcon({
+        className: "",
+        html: `<div class="pin" style="background:${color}"></div>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9]
+      });
+    }
 
-function colorForUser(u){
-  return PALETTE[ hashUser(u||"") % PALETTE.length ];
-}
+    function fmtNum(x) {
+      if (x === null || x === undefined) return "—";
+      const n = Number(x);
+      if (!isFinite(n)) return "—";
+      return n.toFixed(6);
+    }
 
-function colorDotIcon(color){
-  return L.divIcon({
-    className:"",
-    html:`<div style="
-      width:14px;height:14px;border-radius:50%;
-      background:${color};
-      border:2px solid white;
-      box-shadow:0 0 6px rgba(0,0,0,.35);
-    "></div>`,
-    iconSize:[14,14],
-    iconAnchor:[7,7]
-  });
-}
+    // ---------------------------
+    // Map init
+    // ---------------------------
+    const map = L.map("map", { zoomControl: true });
+    const defaultCenter = [1.3521, 103.8198];
+    map.setView(defaultCenter, 12);
 
-// =====================
-// Map
-// =====================
-const map = L.map('map').setView([1.3521,103.8198],12);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "© OpenStreetMap"
+    }).addTo(map);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  maxZoom:19,
-  attribution:'© OpenStreetMap'
-}).addTo(map);
+    // user -> marker
+    const markers = {};
+    // user -> accuracy circle
+    const accCircles = {};
 
-const markers = {};
+    function ensureMarker(user, lat, lng, ts, acc) {
+      const color = colorForUser(user);
 
-// =====================
-// Fetch + Refresh
-// =====================
-async function fetchJSON(url){
-  const r = await fetch(url,{cache:"no-store"});
-  if(!r.ok) throw new Error(r.status);
-  return await r.json();
-}
+      // marker
+      if (!markers[user]) {
+        markers[user] = L.marker([lat, lng], { icon: markerIcon(color) })
+          .addTo(map)
+          .bindPopup(`<b>${user}</b><br>${ts}`);
 
-function setStatus(msg, ok=true){
-  const el=document.getElementById("status");
-  el.textContent=msg;
-  el.style.color= ok ? "#006400" : "#b00020";
-}
-
-function renderEvents(items){
-  const box=document.getElementById("events");
-  box.innerHTML="";
-
-  if(!items.length){
-    box.innerHTML="<div class='event'>No events yet.</div>";
-    return;
-  }
-
-  items.forEach(e=>{
-    const c=colorForUser(e.user);
-    const div=document.createElement("div");
-    div.className="event";
-    div.innerHTML=`
-      <div style="display:flex;align-items:center;gap:10px;">
-        <div class="dot" style="background:${c}"></div>
-        <b>${e.user}</b>
-      </div>
-      <div class="small" style="margin-top:4px;">
-        ${e.ts}<br/>
-        lat ${Number(e.lat).toFixed(6)}, lng ${Number(e.lng).toFixed(6)}
-      </div>
-    `;
-    box.appendChild(div);
-  });
-}
-
-async function refresh(){
-  try{
-    const positions = await fetchJSON("/positions?since_sec=3600");
-
-    // Update markers
-    const seen=new Set();
-
-    positions.forEach(p=>{
-      if(p.lat==null||p.lng==null) return;
-      seen.add(p.user);
-      const c=colorForUser(p.user);
-
-      if(!markers[p.user]){
-        markers[p.user]=L.marker([p.lat,p.lng],{
-          icon:colorDotIcon(c)
-        }).addTo(map)
-        .bindPopup(`<b>${p.user}</b><br/>${p.ts}`);
+        // tap marker also recenters (nice on phone)
+        markers[user].on("click", () => {
+          zoomToUser(user, lat, lng, acc, ts);
+        });
       } else {
-        markers[p.user].setLatLng([p.lat,p.lng]);
-        markers[p.user].setIcon(colorDotIcon(c));
+        markers[user].setLatLng([lat, lng]);
+        markers[user].setPopupContent(`<b>${user}</b><br>${ts}`);
       }
+
+      // accuracy circle (optional)
+      const r = Number(acc);
+      if (isFinite(r) && r > 0) {
+        if (!accCircles[user]) {
+          accCircles[user] = L.circle([lat, lng], {
+            radius: r,
+            weight: 2,
+            opacity: 0.6,
+            fillOpacity: 0.08
+          }).addTo(map);
+        } else {
+          accCircles[user].setLatLng([lat, lng]);
+          accCircles[user].setRadius(r);
+        }
+      } else if (accCircles[user]) {
+        map.removeLayer(accCircles[user]);
+        delete accCircles[user];
+      }
+    }
+
+    function zoomToUser(user, lat, lng, acc, ts) {
+      const r = Number(acc);
+
+      // If accuracy available, fit bounds around it (feels "smart")
+      if (isFinite(r) && r >= 10) {
+        const circle = L.circle([lat, lng], { radius: r });
+        map.fitBounds(circle.getBounds(), { padding: [40, 80] });
+      } else {
+        // Otherwise, just zoom in nicely
+        const targetZoom = Math.max(map.getZoom(), 16);
+        map.flyTo([lat, lng], targetZoom, { duration: 0.6 });
+      }
+
+      if (markers[user]) {
+        markers[user].openPopup();
+      } else {
+        // in case marker not yet created
+        L.popup().setLatLng([lat, lng]).setContent(`<b>${user}</b><br>${ts}`).openOn(map);
+      }
+    }
+
+    function updateStatus(ok, msg) {
+      statusLine.textContent = msg;
+      statusLine.className = ok ? "ok" : "bad";
+    }
+
+    // ---------------------------
+    // Render events list
+    // ---------------------------
+    function renderEvents(items) {
+      eventsEl.innerHTML = "";
+      if (!items || items.length === 0) {
+        const div = document.createElement("div");
+        div.className = "event";
+        div.innerHTML = `<div class="muted">No events</div>`;
+        eventsEl.appendChild(div);
+        return;
+      }
+
+      // Show latest first (server returns latest first if you use /events; /positions returns 1 per user)
+      items.forEach(it => {
+        const user = it.user || "anonymous";
+        const color = colorForUser(user);
+
+        const row = document.createElement("div");
+        row.className = "event";
+        row.innerHTML = `
+          <div class="rowTop">
+            <div class="dot" style="background:${color}"></div>
+            <div class="name">${user}</div>
+          </div>
+          <div class="meta">${it.ts || ""}</div>
+          <div class="meta muted">lat ${fmtNum(it.lat)}, lng ${fmtNum(it.lng)}${it.acc ? ` (±${Math.round(it.acc)}m)` : ""}</div>
+        `;
+
+        // IMPORTANT: tap-to-zoom
+        row.addEventListener("click", () => {
+          if (it.lat == null || it.lng == null) return;
+          zoomToUser(user, Number(it.lat), Number(it.lng), it.acc, it.ts || "");
+        });
+
+        eventsEl.appendChild(row);
+      });
+    }
+
+    // ---------------------------
+    // Fetch loop
+    // ---------------------------
+    async function refresh() {
+      try {
+        const since = (sinceSecInput.value || "").trim();
+        const q = new URLSearchParams();
+        if (since) q.set("since_sec", since);
+
+        // Use /positions for one latest point per user
+        const res = await fetch(`/positions?${q.toString()}`, { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        let items = await res.json();
+
+        if (userFilter) {
+          items = items.filter(x => (x.user || "").toLowerCase() === userFilter.toLowerCase());
+        }
+
+        // update map markers
+        items.forEach(it => {
+          if (it.lat == null || it.lng == null) return;
+          ensureMarker(it.user, Number(it.lat), Number(it.lng), it.ts || "", it.acc);
+        });
+
+        updateStatus(true, `OK (${items.length} users)`);
+        renderEvents(items);
+      } catch (e) {
+        updateStatus(false, `Error: ${String(e.message || e)}`);
+      }
+    }
+
+    // ---------------------------
+    // Buttons
+    // ---------------------------
+    toggleBtn.addEventListener("click", () => {
+      const hidden = panel.style.display === "none";
+      panel.style.display = hidden ? "block" : "none";
+      toggleBtn.textContent = hidden ? "Hide" : "Show";
+      if (!hidden) toggleBtn.textContent = "Hide";
     });
 
-    // remove old markers
-    Object.keys(markers).forEach(u=>{
-      if(!seen.has(u)){
-        map.removeLayer(markers[u]);
-        delete markers[u];
-      }
+    recenterBtn.addEventListener("click", () => {
+      map.setView(defaultCenter, 12);
     });
 
-    const events = await fetchJSON("/events?limit=20");
-    renderEvents(events);
-
-    setStatus(`OK (${positions.length} users)`);
-
-  } catch(e){
-    setStatus("Refresh failed",false);
-  }
-}
-
-refresh();
-setInterval(refresh,3000);
-
-// =====================
-// Collapsible panel
-// =====================
-const toggleBtn=document.getElementById("togglePanel");
-const panel=document.getElementById("panel");
-
-toggleBtn.addEventListener("click",()=>{
-  panel.classList.toggle("collapsed");
-  toggleBtn.textContent = panel.classList.contains("collapsed")
-    ? "Show"
-    : "Hide";
-});
-</script>
-
+    // initial + interval
+    refresh();
+    setInterval(refresh, 3000);
+  </script>
 </body>
 </html>

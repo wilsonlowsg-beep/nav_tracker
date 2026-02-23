@@ -1,10 +1,11 @@
-<!-- templates/map.html -->
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, initial-scale=1, user-scalable=no" />
-  <title>Nav Tracker Map</title>
+  <!-- IMPORTANT for mobile sizing -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+  <title>Nav Tracker</title>
 
   <link
     rel="stylesheet"
@@ -13,329 +14,259 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    html, body { height: 100%; margin: 0; font-family: -apple-system, system-ui, Arial, sans-serif; }
-    #map { height: 100%; width: 100%; }
-
-    /* Bottom sheet */
-    #panel {
-      position: absolute;
-      left: 12px; right: 12px; bottom: 12px;
-      background: rgba(255,255,255,0.95);
-      border: 1px solid #e6e6e6;
-      border-radius: 16px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.15);
-      padding: 12px;
-      max-height: 55vh;
-      overflow: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    #panelHeader {
+    html, body { height: 100%; margin: 0; }
+    /* Layout: map + events */
+    .app {
+      height: 100%;
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 6px;
+      flex-direction: row;
     }
-
-    #panel h2 { margin: 0; font-size: 34px; letter-spacing: -0.5px; }
-    .small { color: #666; font-size: 14px; margin-top: 2px; }
-
-    .btn {
-      border: 1px solid #d8d8d8;
+    #map {
+      flex: 1;
+      min-width: 0;
+      height: 100%;
+    }
+    .panel {
+      width: 360px;
+      max-width: 45vw;
+      border-left: 1px solid #e5e5e5;
       background: #fff;
-      padding: 8px 12px;
-      border-radius: 999px;
-      font-size: 16px;
+      overflow: auto;
+      padding: 16px;
+      box-sizing: border-box;
     }
-    .btn:active { transform: scale(0.98); }
 
-    #statusLine { margin: 6px 0 10px 0; font-size: 16px; }
-    #statusLine.ok { color: #2a7a2a; }
-    #statusLine.bad { color: #b00020; }
+    .panel h2 { margin: 0 0 8px; }
+    .muted { color: #666; font-size: 14px; margin-bottom: 10px; }
 
     .event {
-      padding: 12px 8px;
-      border-top: 1px solid #eee;
+      padding: 10px 8px;
+      border-bottom: 1px solid #eee;
       cursor: pointer;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
     }
-    .event:active { background: #f3f3f3; }
-
-    .rowTop {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
+    .event:hover { background: #fafafa; }
+    .nameRow { display: flex; align-items: center; gap: 10px; }
     .dot {
-      width: 14px; height: 14px;
-      border-radius: 50%;
-      flex: 0 0 auto;
-      border: 2px solid rgba(255,255,255,0.9);
-      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      width: 14px; height: 14px; border-radius: 50%;
+      flex: 0 0 14px;
+      border: 2px solid #fff;
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.12);
     }
-    .name { font-weight: 800; font-size: 30px; line-height: 1.05; }
-    .meta { color: #333; font-size: 18px; margin-top: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .muted { color: #666; }
+    .name { font-weight: 800; font-size: 22px; }
+    .meta { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; color: #333; }
 
-    .pillRow {
-      display: flex;
-      gap: 10px;
-      margin-top: 6px;
-      flex-wrap: wrap;
-    }
+    /* ---------- Mobile: bottom sheet ---------- */
+    @media (max-width: 768px) {
+      .app { flex-direction: column; }
+      #map { height: 100%; }
 
-    .input {
-      width: 140px;
-      font-size: 16px;
-      padding: 8px 10px;
-      border: 1px solid #d8d8d8;
-      border-radius: 12px;
-      background: #fff;
-    }
+      .panel {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: auto;
+        max-width: none;
+        height: 46vh;
+        border-left: none;
+        border-top: 1px solid #e5e5e5;
+        border-radius: 14px 14px 0 0;
+        z-index: 9999; /* above Leaflet */
+        box-shadow: 0 -10px 30px rgba(0,0,0,0.15);
+        padding-top: 10px;
+      }
+      .grab {
+        width: 44px; height: 5px;
+        border-radius: 999px;
+        background: #ddd;
+        margin: 0 auto 10px;
+      }
+      .panelHeaderRow {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 8px;
+      }
+      .btn {
+        border: 1px solid #ddd;
+        background: #fff;
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-size: 16px;
+      }
 
-    /* marker "dot" icon */
-    .pin {
-      width: 18px;
-      height: 18px;
-      border-radius: 50%;
-      border: 3px solid #fff;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+      /* allow map zoom buttons not blocked too much */
+      .leaflet-top.leaflet-left { top: 10px; left: 10px; }
     }
   </style>
 </head>
 
 <body>
-  <div id="map"></div>
+  <div class="app">
+    <div id="map"></div>
 
-  <div id="panel">
-    <div id="panelHeader">
-      <div>
-        <h2>Events</h2>
-        <div class="small">Auto-refresh every 3s</div>
+    <aside class="panel" id="panel">
+      <div class="grab"></div>
+
+      <div class="panelHeaderRow">
+        <div>
+          <h2>Events</h2>
+          <div class="muted">Auto-refresh every <span id="refreshSec">3</span>s</div>
+        </div>
+        <button class="btn" id="toggleBtn" type="button">Hide</button>
       </div>
-      <button id="toggleBtn" class="btn">Hide</button>
-    </div>
 
-    <div class="pillRow">
-      <button id="recenterBtn" class="btn">Recenter</button>
-      <div class="small muted" style="align-self:center;">Show users active within (seconds):</div>
-      <input id="sinceSec" class="input" type="number" value="3600" min="5" max="86400" />
-    </div>
+      <div class="muted">
+        Show users active within (seconds):
+        <input id="sinceSec" type="number" value="3600" style="width: 120px; padding: 6px; margin-left: 8px;">
+      </div>
 
-    <div id="statusLine" class="ok">OK</div>
-    <div id="events"></div>
+      <div id="status" class="muted"></div>
+      <div id="events"></div>
+    </aside>
   </div>
 
   <script>
-    // ---------------------------
-    // Helpers
-    // ---------------------------
-    const qs = new URLSearchParams(window.location.search);
-    const userFilter = (qs.get("user") || "").trim(); // optional
-    const panel = document.getElementById("panel");
-    const toggleBtn = document.getElementById("toggleBtn");
-    const recenterBtn = document.getElementById("recenterBtn");
-    const sinceSecInput = document.getElementById("sinceSec");
-    const statusLine = document.getElementById("statusLine");
-    const eventsEl = document.getElementById("events");
+    // --- Map init ---
+    const map = L.map('map').setView([1.3521, 103.8198], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
 
-    function hashToHue(str) {
-      let h = 0;
-      for (let i = 0; i < str.length; i++) {
-        h = (h * 31 + str.charCodeAt(i)) >>> 0;
+    // --- UI state ---
+    const panel = document.getElementById('panel');
+    const toggleBtn = document.getElementById('toggleBtn');
+    const eventsEl = document.getElementById('events');
+    const statusEl = document.getElementById('status');
+    const sinceInput = document.getElementById('sinceSec');
+
+    let panelVisible = true;
+    toggleBtn.addEventListener('click', () => {
+      panelVisible = !panelVisible;
+      panel.style.display = panelVisible ? 'block' : 'none';
+      toggleBtn.textContent = panelVisible ? 'Hide' : 'Show';
+      if (!panelVisible) {
+        // create a small floating button to bring it back on mobile
+        const btn = document.createElement('button');
+        btn.id = 'showPanelBtn';
+        btn.textContent = 'Events';
+        btn.className = 'btn';
+        btn.style.position = 'fixed';
+        btn.style.right = '12px';
+        btn.style.bottom = '12px';
+        btn.style.zIndex = '99999';
+        document.body.appendChild(btn);
+        btn.onclick = () => {
+          panelVisible = true;
+          panel.style.display = 'block';
+          toggleBtn.textContent = 'Hide';
+          btn.remove();
+        };
+      } else {
+        const btn = document.getElementById('showPanelBtn');
+        if (btn) btn.remove();
       }
-      return h % 360;
+    });
+
+    // --- Per-user colors + markers ---
+    const userColor = new Map();
+    function colorFor(name) {
+      if (userColor.has(name)) return userColor.get(name);
+      // stable color from name
+      let hash = 0;
+      for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash) + name.charCodeAt(i);
+      const hue = Math.abs(hash) % 360;
+      const c = `hsl(${hue} 70% 45%)`;
+      userColor.set(name, c);
+      return c;
     }
 
-    function colorForUser(name) {
-      const hue = hashToHue(name.toLowerCase());
-      return `hsl(${hue} 85% 45%)`;
-    }
+    const markers = new Map(); // name -> leaflet marker
 
-    function markerIcon(color) {
+    function makeDotIcon(color) {
       return L.divIcon({
-        className: "",
-        html: `<div class="pin" style="background:${color}"></div>`,
+        className: '',
+        html: `<div style="
+          width:18px;height:18px;border-radius:50%;
+          background:${color};
+          border:2px solid #fff;
+          box-shadow:0 0 0 1px rgba(0,0,0,.25);
+        "></div>`,
         iconSize: [18, 18],
         iconAnchor: [9, 9]
       });
     }
 
-    function fmtNum(x) {
-      if (x === null || x === undefined) return "—";
-      const n = Number(x);
-      if (!isFinite(n)) return "—";
-      return n.toFixed(6);
-    }
+    function upsertMarker(p) {
+      const name = p.user || 'unknown';
+      const col = colorFor(name);
+      const latlng = [p.lat, p.lng];
 
-    // ---------------------------
-    // Map init
-    // ---------------------------
-    const map = L.map("map", { zoomControl: true });
-    const defaultCenter = [1.3521, 103.8198];
-    map.setView(defaultCenter, 12);
-
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: "© OpenStreetMap"
-    }).addTo(map);
-
-    // user -> marker
-    const markers = {};
-    // user -> accuracy circle
-    const accCircles = {};
-
-    function ensureMarker(user, lat, lng, ts, acc) {
-      const color = colorForUser(user);
-
-      // marker
-      if (!markers[user]) {
-        markers[user] = L.marker([lat, lng], { icon: markerIcon(color) })
-          .addTo(map)
-          .bindPopup(`<b>${user}</b><br>${ts}`);
-
-        // tap marker also recenters (nice on phone)
-        markers[user].on("click", () => {
-          zoomToUser(user, lat, lng, acc, ts);
-        });
+      if (!markers.has(name)) {
+        const m = L.marker(latlng, { icon: makeDotIcon(col) }).addTo(map);
+        m.bindPopup(`<b>${name}</b><br>${p.ts}`);
+        markers.set(name, m);
       } else {
-        markers[user].setLatLng([lat, lng]);
-        markers[user].setPopupContent(`<b>${user}</b><br>${ts}`);
-      }
-
-      // accuracy circle (optional)
-      const r = Number(acc);
-      if (isFinite(r) && r > 0) {
-        if (!accCircles[user]) {
-          accCircles[user] = L.circle([lat, lng], {
-            radius: r,
-            weight: 2,
-            opacity: 0.6,
-            fillOpacity: 0.08
-          }).addTo(map);
-        } else {
-          accCircles[user].setLatLng([lat, lng]);
-          accCircles[user].setRadius(r);
-        }
-      } else if (accCircles[user]) {
-        map.removeLayer(accCircles[user]);
-        delete accCircles[user];
+        const m = markers.get(name);
+        m.setLatLng(latlng);
+        m.setPopupContent(`<b>${name}</b><br>${p.ts}`);
       }
     }
 
-    function zoomToUser(user, lat, lng, acc, ts) {
-      const r = Number(acc);
-
-      // If accuracy available, fit bounds around it (feels "smart")
-      if (isFinite(r) && r >= 10) {
-        const circle = L.circle([lat, lng], { radius: r });
-        map.fitBounds(circle.getBounds(), { padding: [40, 80] });
-      } else {
-        // Otherwise, just zoom in nicely
-        const targetZoom = Math.max(map.getZoom(), 16);
-        map.flyTo([lat, lng], targetZoom, { duration: 0.6 });
-      }
-
-      if (markers[user]) {
-        markers[user].openPopup();
-      } else {
-        // in case marker not yet created
-        L.popup().setLatLng([lat, lng]).setContent(`<b>${user}</b><br>${ts}`).openOn(map);
-      }
+    function focusOn(name) {
+      const m = markers.get(name);
+      if (!m) return;
+      map.setView(m.getLatLng(), Math.max(map.getZoom(), 15), { animate: true });
+      m.openPopup();
     }
 
-    function updateStatus(ok, msg) {
-      statusLine.textContent = msg;
-      statusLine.className = ok ? "ok" : "bad";
+    async function fetchPositions() {
+      const since = Number(sinceInput.value || 3600);
+      const url = `/positions?since_sec=${encodeURIComponent(since)}`;
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
     }
 
-    // ---------------------------
-    // Render events list
-    // ---------------------------
-    function renderEvents(items) {
-      eventsEl.innerHTML = "";
-      if (!items || items.length === 0) {
-        const div = document.createElement("div");
-        div.className = "event";
-        div.innerHTML = `<div class="muted">No events</div>`;
-        eventsEl.appendChild(div);
-        return;
-      }
+    function renderEvents(list) {
+      statusEl.textContent = `OK (${list.length} users)`;
+      eventsEl.innerHTML = '';
 
-      // Show latest first (server returns latest first if you use /events; /positions returns 1 per user)
-      items.forEach(it => {
-        const user = it.user || "anonymous";
-        const color = colorForUser(user);
+      // show newest first
+      list.sort((a,b) => (b.ts || '').localeCompare(a.ts || ''));
 
-        const row = document.createElement("div");
-        row.className = "event";
+      for (const p of list) {
+        const name = p.user || 'unknown';
+        const col = colorFor(name);
+
+        const row = document.createElement('div');
+        row.className = 'event';
         row.innerHTML = `
-          <div class="rowTop">
-            <div class="dot" style="background:${color}"></div>
-            <div class="name">${user}</div>
+          <div class="nameRow">
+            <span class="dot" style="background:${col}"></span>
+            <div class="name">${name}</div>
           </div>
-          <div class="meta">${it.ts || ""}</div>
-          <div class="meta muted">lat ${fmtNum(it.lat)}, lng ${fmtNum(it.lng)}${it.acc ? ` (±${Math.round(it.acc)}m)` : ""}</div>
+          <div class="meta">${p.ts}</div>
+          <div class="meta">lat ${p.lat}, lng ${p.lng}</div>
         `;
-
-        // IMPORTANT: tap-to-zoom
-        row.addEventListener("click", () => {
-          if (it.lat == null || it.lng == null) return;
-          zoomToUser(user, Number(it.lat), Number(it.lng), it.acc, it.ts || "");
-        });
-
+        row.onclick = () => focusOn(name);
         eventsEl.appendChild(row);
-      });
+      }
     }
 
-    // ---------------------------
-    // Fetch loop
-    // ---------------------------
     async function refresh() {
       try {
-        const since = (sinceSecInput.value || "").trim();
-        const q = new URLSearchParams();
-        if (since) q.set("since_sec", since);
-
-        // Use /positions for one latest point per user
-        const res = await fetch(`/positions?${q.toString()}`, { cache: "no-store" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        let items = await res.json();
-
-        if (userFilter) {
-          items = items.filter(x => (x.user || "").toLowerCase() === userFilter.toLowerCase());
-        }
-
-        // update map markers
-        items.forEach(it => {
-          if (it.lat == null || it.lng == null) return;
-          ensureMarker(it.user, Number(it.lat), Number(it.lng), it.ts || "", it.acc);
-        });
-
-        updateStatus(true, `OK (${items.length} users)`);
-        renderEvents(items);
+        const data = await fetchPositions();
+        // data expected: [{user, lat, lng, ts}, ...]
+        data.forEach(upsertMarker);
+        renderEvents(data);
       } catch (e) {
-        updateStatus(false, `Error: ${String(e.message || e)}`);
+        statusEl.textContent = `Error: ${e.message}`;
       }
     }
 
-    // ---------------------------
-    // Buttons
-    // ---------------------------
-    toggleBtn.addEventListener("click", () => {
-      const hidden = panel.style.display === "none";
-      panel.style.display = hidden ? "block" : "none";
-      toggleBtn.textContent = hidden ? "Hide" : "Show";
-      if (!hidden) toggleBtn.textContent = "Hide";
-    });
-
-    recenterBtn.addEventListener("click", () => {
-      map.setView(defaultCenter, 12);
-    });
-
-    // initial + interval
     refresh();
     setInterval(refresh, 3000);
   </script>
